@@ -4,3 +4,7 @@ Copyright 2025 OpenAI
 This project includes code derived from [Ratatui](https://github.com/ratatui/ratatui), licensed under the MIT license.
 Copyright (c) 2016-2022 Florian Dehau
 Copyright (c) 2023-2025 The Ratatui Developers
+
+Terminal math rendering uses LaTeX-Rust (MIT OR Apache-2.0) and its embedded
+STIX Two Math font (SIL Open Font License 1.1). See third_party/latex-rust/NOTICE,
+third_party/latex-rust/LICENSE-MIT, and third_party/latex-rust/STIX-OFL.txt.

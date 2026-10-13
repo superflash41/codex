@@ -4865,6 +4865,7 @@ dependencies = [
  "image",
  "insta",
  "itertools 0.14.0",
+ "latex-rust",
  "lazy_static",
  "libc",
  "objc2-app-kit",
@@ -5054,7 +5055,7 @@ dependencies = [
  "divan",
  "image",
  "mime_guess",
- "png",
+ "png 0.18.0",
  "thiserror 2.0.18",
  "tokio",
 ]
@@ -9384,7 +9385,7 @@ dependencies = [
  "image-webp",
  "moxcms",
  "num-traits",
- "png",
+ "png 0.18.0",
  "tiff",
  "zune-core 0.5.1",
  "zune-jpeg 0.5.12",
@@ -9897,6 +9898,16 @@ dependencies = [
  "enumflags2",
  "libc",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "latex-rust"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8094b939c8af51f9c7d08256ffa607b743e24d466d9a0ccc602dc748c911e54"
+dependencies = [
+ "tiny-skia",
+ "ttf-parser",
 ]
 
 [[package]]
@@ -11683,6 +11694,19 @@ dependencies = [
  "quick-xml 0.39.4",
  "serde",
  "time",
+]
+
+[[package]]
+name = "png"
+version = "0.17.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "82151a2fc869e011c153adc57cf2789ccb8d9906ce52c0b39a6b5697749d7526"
+dependencies = [
+ "bitflags 1.3.2",
+ "crc32fast",
+ "fdeflate",
+ "flate2",
+ "miniz_oxide",
 ]
 
 [[package]]
@@ -14886,6 +14910,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
 
 [[package]]
+name = "strict-num"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6637bab7722d379c8b41ba849228d680cc12d0a45ba1fa2b48f2a30577a06731"
+
+[[package]]
 name = "stringprep"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -15643,6 +15673,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "tiny-skia"
+version = "0.11.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83d13394d44dae3207b52a326c0c85a8bf87f1541f23b0d143811088497b09ab"
+dependencies = [
+ "arrayref",
+ "arrayvec",
+ "bytemuck",
+ "cfg-if",
+ "log",
+ "png 0.17.16",
+ "tiny-skia-path",
+]
+
+[[package]]
+name = "tiny-skia-path"
+version = "0.11.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9c9e7fc0c2e86a30b117d0462aa261b72b7a99b7ebd7deb3a14ceda95c5bdc93"
+dependencies = [
+ "arrayref",
+ "bytemuck",
+ "strict-num",
+]
+
+[[package]]
 name = "tiny_http"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -16250,6 +16306,12 @@ dependencies = [
  "syn 2.0.117",
  "termcolor",
 ]
+
+[[package]]
+name = "ttf-parser"
+version = "0.25.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2df906b07856748fa3f6e0ad0cbaa047052d4a7dd609e231c4f72cee8c36f31"
 
 [[package]]
 name = "tungstenite"
