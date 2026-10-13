@@ -187,6 +187,25 @@ pub(crate) fn plain_lines(lines: impl IntoIterator<Item = Line<'static>>) -> Vec
         .collect()
 }
 
+fn raw_hyperlink_lines(lines: Vec<HyperlinkLine>) -> Vec<Line<'static>> {
+    if lines.iter().all(|line| line.images.is_empty()) {
+        return plain_lines(visible_lines(lines));
+    }
+    let mut selected = Vec::new();
+    for line in lines {
+        let source = line.source.unwrap_or_else(|| {
+            crate::terminal_hyperlinks::LogicalLineSource::from_line(&line.line)
+        });
+        crate::markdown_copy::SelectedLine::append(
+            &mut selected,
+            source.clone(),
+            source.range.clone(),
+            "\n",
+        );
+    }
+    raw_lines_from_source(&crate::markdown_copy::literal_selection(&selected, ""))
+}
+
 /// A single renderable unit of conversation history.
 ///
 /// Each cell produces logical `Line`s and reports how many viewport

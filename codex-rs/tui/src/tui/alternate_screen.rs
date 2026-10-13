@@ -84,6 +84,7 @@ impl AlternateScreen {
 
     pub(super) fn enter(&self, writer: &mut impl Write, capture_mouse: bool) -> Result<()> {
         queue!(writer, EnterAlternateScreen)?;
+        crate::math_graphics::reset_transfers();
         // Stdout retains queued bytes on a flush error; cleanup must follow that pending entry.
         self.active.store(/*val*/ true, Ordering::Relaxed);
         writer.flush()?;
@@ -187,6 +188,7 @@ impl AlternateScreen {
         let input_result = self.release_input(writer);
         // A failed earlier cleanup write must not prevent the actual screen transition.
         let screen_result = execute!(writer, LeaveAlternateScreen);
+        crate::math_graphics::reset_transfers();
         if screen_result.is_ok() {
             self.active.store(/*val*/ false, Ordering::Relaxed);
         }

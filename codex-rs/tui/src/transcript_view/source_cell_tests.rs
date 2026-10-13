@@ -322,3 +322,38 @@ fn assert_layout_paints_like_lines(lines: Vec<HyperlinkLine>, width: u16) {
     TextLayout::new(lines, width).render(area, &mut actual, /*start_row*/ 0);
     assert_eq!(actual, expected);
 }
+
+#[test]
+fn math_reflow_regenerates_padding_and_centering_without_changing_copied_tex() {
+    let _graphics = crate::math_graphics::tests::Graphics::enable();
+    for source in [
+        r"Before $\frac{a}{b}$ after $x^2$ and following words that wrap.",
+        r"$$\frac{\frac{a}{b}}{\frac{c}{d}}$$",
+        r"- Before $\frac{a}{b}$ [after](https://example.com) and following words.",
+    ] {
+        let render = |width| {
+            crate::markdown_render::render_markdown_lines_with_width_and_cwd(
+                source,
+                Some(width),
+                None,
+            )
+        };
+        let saved = TextLayout::new(render(80), 80);
+        for width in [20, 32, 60, 80] {
+            let lines = render(usize::from(width));
+            assert_layout_paints_like_lines(lines.clone(), width);
+            let area = Rect::new(0, 0, width, 30);
+            let mut expected = Buffer::empty(area);
+            TextLayout::new(lines, width).render(area, &mut expected, 0);
+            let mut actual = Buffer::empty(area);
+            let rewrapped = saved.rewrap(width);
+            rewrapped.render(area, &mut actual, 0);
+            assert_eq!(actual, expected, "{source} at {width}");
+            let mut selected = Vec::new();
+            rewrapped.copy_lines(0..rewrapped.text().len(), "", &mut selected);
+            let (copied, _) = crate::markdown_copy::selection(&selected, rewrapped.text());
+            assert!(copied.contains(r"\frac{a}{b}"), "{copied}");
+            assert!(!copied.contains(crate::math_graphics::SLOT));
+        }
+    }
+}

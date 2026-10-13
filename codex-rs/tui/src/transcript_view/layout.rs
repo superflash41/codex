@@ -66,6 +66,7 @@ pub(super) struct LayoutCache {
 
 #[derive(PartialEq, Eq)]
 struct RenderState {
+    math_cell_size: Option<crate::math_graphics::CellSize>,
     theme: u64,
     foreground: Option<(u8, u8, u8)>,
     background: Option<(u8, u8, u8)>,
@@ -219,6 +220,7 @@ impl LayoutCache {
     pub(super) fn begin_frame(&mut self) {
         self.frame = self.frame.wrapping_add(/*rhs*/ 1);
         let state = RenderState {
+            math_cell_size: crate::math_graphics::cell_size(),
             theme: crate::render::highlight::syntax_theme_revision(),
             foreground: crate::terminal_palette::default_fg(),
             background: crate::terminal_palette::default_bg(),

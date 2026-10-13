@@ -145,6 +145,7 @@ pub(crate) struct HyperlinkLine {
     pub(crate) line: Line<'static>,
     pub(crate) hyperlinks: Vec<TerminalHyperlink>,
     pub(crate) source: Option<LogicalLineSource>,
+    pub(crate) images: Vec<crate::math_graphics::ImageRow>,
 }
 
 // Source provenance is shared layout metadata; omit it from visual diagnostics to avoid
@@ -161,7 +162,9 @@ impl std::fmt::Debug for HyperlinkLine {
 
 impl PartialEq for HyperlinkLine {
     fn eq(&self, other: &Self) -> bool {
-        self.line == other.line && self.hyperlinks == other.hyperlinks
+        self.line == other.line
+            && self.hyperlinks == other.hyperlinks
+            && self.images == other.images
     }
 }
 
@@ -182,6 +185,7 @@ impl HyperlinkLine {
             line,
             hyperlinks: Vec::new(),
             source: None,
+            images: Vec::new(),
         }
     }
 
@@ -275,6 +279,9 @@ pub(crate) fn prefix_hyperlink_lines(
             line.line = Line::from(spans).style(line.line.style);
             for hyperlink in &mut line.hyperlinks {
                 hyperlink.columns = hyperlink.columns.start + shift..hyperlink.columns.end + shift;
+            }
+            for image in &mut line.images {
+                image.shift(shift);
             }
             line
         })
@@ -415,6 +422,11 @@ pub(crate) fn remap_source_wrapped_line(
                 line,
                 hyperlinks,
                 source: Some(logical.wrapped(range, wrapped.prefix_bytes)),
+                images: source
+                    .images
+                    .iter()
+                    .filter_map(|image| image.project(start..end, prefix_columns))
+                    .collect(),
             }
         })
         .collect()
@@ -432,7 +444,7 @@ pub(crate) fn remap_wrapped_line(
     wrapped: Vec<Line<'static>>,
 ) -> Vec<HyperlinkLine> {
     let mut out = plain_hyperlink_lines(wrapped);
-    if source.hyperlinks.is_empty() && source.source.is_none() {
+    if source.hyperlinks.is_empty() && source.images.is_empty() && source.source.is_none() {
         return out;
     }
     let source_text = line_text(&source.line);
@@ -464,6 +476,16 @@ pub(crate) fn remap_wrapped_line(
             .as_ref()
             .map(|source| source.wrapped(source_byte..source_byte + mapped.len(), rendered_start));
         let mut output_column = display_width(&rendered[..rendered_start]);
+        line.images = source
+            .images
+            .iter()
+            .filter_map(|image| {
+                image.project(
+                    source_column..source_column + display_width(mapped),
+                    output_column,
+                )
+            })
+            .collect();
         for grapheme in mapped.graphemes(/*is_extended*/ true) {
             let width = display_width(grapheme);
             while source
@@ -672,6 +694,12 @@ pub(crate) fn strip_osc8(text: &str) -> String {
 }
 
 pub(crate) fn decorate_spans(line: &HyperlinkLine) -> Vec<Span<'static>> {
+    if !line.images.is_empty() {
+        let mut decorated = line.clone();
+        decorated.line.spans = crate::math_graphics::decorate(line);
+        decorated.images.clear();
+        return decorate_spans(&decorated);
+    }
     if line.hyperlinks.is_empty() {
         return line
             .line
@@ -764,7 +792,12 @@ pub(crate) fn mark_buffer_hyperlinks(
     lines: &[HyperlinkLine],
     scroll_rows: usize,
 ) {
-    if area.width == 0 || area.height == 0 || lines.iter().all(|line| line.hyperlinks.is_empty()) {
+    if area.width == 0
+        || area.height == 0
+        || lines
+            .iter()
+            .all(|line| line.hyperlinks.is_empty() && line.images.is_empty())
+    {
         return;
     }
     let viewport_end = scroll_rows.saturating_add(usize::from(area.height));
@@ -776,7 +809,8 @@ pub(crate) fn mark_buffer_hyperlinks(
         let paragraph =
             Paragraph::new(Text::from(line_to_borrowed(&line.line))).wrap(Wrap { trim: false });
         let rendered_height = paragraph.line_count(area.width).max(/*other*/ 1);
-        if line.hyperlinks.is_empty() || logical_row.saturating_add(rendered_height) <= scroll_rows
+        if line.hyperlinks.is_empty() && line.images.is_empty()
+            || logical_row.saturating_add(rendered_height) <= scroll_rows
         {
             logical_row += rendered_height;
             continue;
@@ -815,6 +849,11 @@ pub(crate) fn mark_buffer_hyperlinks(
             if row < scroll_rows || row >= viewport_end {
                 continue;
             }
+            crate::math_graphics::mark_buffer(
+                buf,
+                Rect::new(area.x, area.y + (row - scroll_rows) as u16, area.width, 1),
+                &rendered.images,
+            );
             for link in &rendered.hyperlinks {
                 let Some(destination) = link.terminal_destination() else {
                     continue;
@@ -957,6 +996,7 @@ mod tests {
     fn decorates_a_contiguous_web_link_with_one_osc8_pair() {
         let destination = "https://example.com/a/very/long/path";
         let line = HyperlinkLine {
+            images: Vec::new(),
             source: None,
             line: Line::from(destination),
             hyperlinks: vec![TerminalHyperlink::web(
@@ -1023,6 +1063,7 @@ mod tests {
             wrapped,
             vec![
                 HyperlinkLine {
+                    images: Vec::new(),
                     source: None,
                     line: Line::from("  alpha 😀here"),
                     hyperlinks: vec![TerminalHyperlink::web(
@@ -1031,6 +1072,7 @@ mod tests {
                     )],
                 },
                 HyperlinkLine {
+                    images: Vec::new(),
                     source: None,
                     line: Line::from("    middle there end"),
                     hyperlinks: vec![TerminalHyperlink::web(
@@ -1293,6 +1335,7 @@ mod tests {
         );
         link.retarget_to_trusted_file(&file_url);
         let line = HyperlinkLine {
+            images: Vec::new(),
             source: None,
             line: Line::from("view"),
             hyperlinks: vec![link],

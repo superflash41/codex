@@ -647,6 +647,7 @@ fn draw<I>(writer: &mut impl Write, commands: I) -> io::Result<()>
 where
     I: Iterator<Item = DrawCommand>,
 {
+    crate::math_graphics::write_pending(writer)?;
     // Disabled crossterm colors emit an empty SGR that also resets non-color attributes.
     let color_enabled = !Colored::ansi_color_disabled_memoized();
     let mut fg = Color::Reset;
@@ -815,6 +816,37 @@ mod tests {
 
     #[path = "cursor_tests.rs"]
     mod cursor;
+
+    #[test]
+    fn math_upload_precedes_placeholder_cells_and_is_not_repeated_on_redraw() {
+        let _graphics = crate::math_graphics::tests::Graphics::enable();
+        let lines = crate::markdown_render::render_markdown_lines_with_width_and_cwd(
+            r"Before $\frac{a}{b}$ after.",
+            Some(40),
+            None,
+        );
+        let area = Rect::new(0, 0, 40, 5);
+        let mut terminal = Terminal::with_options(CaptureBackend::new(40, 5)).unwrap();
+        terminal.set_viewport_area(area);
+        for frame in 0..2 {
+            terminal.backend_mut().output.clear();
+            terminal
+                .draw(|frame| {
+                    crate::terminal_hyperlinks::HyperlinkParagraph::new(&lines, Style::default())
+                        .render(area, frame.buffer_mut());
+                })
+                .unwrap();
+            let output = terminal.backend().output();
+            if frame == 0 {
+                let upload = output.find("\x1b_Ga=T,U=1").unwrap();
+                let placeholder = output.find('\u{10eeee}').unwrap();
+                assert!(upload < placeholder);
+                assert!(!output.contains(crate::math_graphics::SLOT));
+            } else {
+                assert!(!output.contains("\x1b_G"));
+            }
+        }
+    }
 
     struct CaptureBackend {
         output: Vec<u8>,

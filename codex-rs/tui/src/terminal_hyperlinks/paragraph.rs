@@ -128,5 +128,6 @@ impl Widget for &HyperlinkLine {
                     .set_diff_option(ratatui::buffer::CellDiffOption::ForcedWidth(width));
             }
         }
+        crate::math_graphics::mark_buffer(buf, area, &self.images);
     }
 }

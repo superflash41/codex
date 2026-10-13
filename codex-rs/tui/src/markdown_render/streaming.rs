@@ -69,7 +69,7 @@ pub(crate) fn render_with_copy_sources(
         super::preferences::current().lists,
     );
     let directives = InlineDirectives::new(input, options);
-    let math = MathMarkdown::new(&directives.markdown, options, width);
+    let math = MathMarkdown::with_graphics(&directives.markdown, options, width, true);
     let parser = Parser::new_ext(&math.markdown, options);
     let has_reference_link_definition = parser.reference_definitions().iter().next().is_some();
     let parser = TopLevelBlockTracker {
@@ -84,6 +84,7 @@ pub(crate) fn render_with_copy_sources(
         mutable_fence_start: None,
     };
     let mut writer = Writer::new(input, width, cwd, is_hidden_link_destination);
+    writer.math_images = math.images.clone();
     // Drop the consumed parser before the rendering state, including on unwind.
     let mut parser = parser;
     writer.list_spacing = list_spacing;

@@ -521,6 +521,15 @@ fn layout_line(logical: &LogicalLine, text_start: usize, width: u16) -> Vec<Text
         logical.initial_indent = Line::default();
         logical.subsequent_indent = Line::default();
     }
+    if let Some(image) = logical.line.images.iter().find(|image| image.image.display) {
+        let padding = usize::from(content_width)
+            .saturating_sub(logical.initial_indent.width() + image.image.columns)
+            / 2;
+        logical
+            .to_mut()
+            .initial_indent
+            .push_span(" ".repeat(padding));
+    }
     let mut line = logical.line.clone();
     line.source = Some(LogicalLineSource::new(
         line.line
@@ -540,10 +549,14 @@ fn layout_line(logical: &LogicalLine, text_start: usize, width: u16) -> Vec<Text
     {
         tabs::wrap_line(&logical, usize::from(content_width))
     } else {
-        let wrapped = match logical.wrap_policy {
-            LineWrapPolicy::Word => word_wrap_line_with_source(&line.line, options),
-            LineWrapPolicy::UrlAware => adaptive_wrap_line_to_width(&line.line, options),
-            LineWrapPolicy::Hard => hard_wrap_line(&line.line, options),
+        let wrapped = if !line.images.is_empty() {
+            crate::math_graphics::wrap(&line, options)
+        } else {
+            match logical.wrap_policy {
+                LineWrapPolicy::Word => word_wrap_line_with_source(&line.line, options),
+                LineWrapPolicy::UrlAware => adaptive_wrap_line_to_width(&line.line, options),
+                LineWrapPolicy::Hard => hard_wrap_line(&line.line, options),
+            }
         };
         let stops = (0..wrapped.len())
             .map(|_| tabs::TabStops::default())
@@ -559,7 +572,7 @@ fn layout_line(logical: &LogicalLine, text_start: usize, width: u16) -> Vec<Text
         .into_iter()
         .zip(positions)
         .zip(tab_stops)
-        .map(|((mut wrapped, (source, prefix_bytes)), tabs)| {
+        .flat_map(|((mut wrapped, (source, prefix_bytes)), tabs)| {
             wrapped.line.alignment = line.line.alignment;
             for link in &mut wrapped.hyperlinks {
                 link.columns = tabs.project_link(link.columns.clone());
@@ -579,15 +592,35 @@ fn layout_line(logical: &LogicalLine, text_start: usize, width: u16) -> Vec<Text
                 Alignment::Right => columns.saturating_sub(text_width),
             };
             let range = text_start + source.start..text_start + source.end;
-            TextRow {
-                line: wrapped,
-                source: range,
-                line_end: None,
-                content_width,
-                first_column: first_column + prefix_columns,
-                prefix_columns,
-                tabs,
-            }
+            let baseline = wrapped
+                .images
+                .iter()
+                .map(|image| image.image.baseline_row)
+                .max()
+                .unwrap_or(0);
+            let mut tabs = Some(tabs);
+            crate::math_graphics::expand(wrapped)
+                .into_iter()
+                .enumerate()
+                .map(move |(row, line)| TextRow {
+                    line,
+                    source: if row == baseline {
+                        range.clone()
+                    } else if row < baseline {
+                        range.start..range.start
+                    } else {
+                        range.end..range.end
+                    },
+                    line_end: None,
+                    content_width,
+                    first_column: first_column + prefix_columns,
+                    prefix_columns,
+                    tabs: if row == baseline {
+                        tabs.take().unwrap_or_default()
+                    } else {
+                        tabs::TabStops::default()
+                    },
+                })
         })
         .collect()
 }

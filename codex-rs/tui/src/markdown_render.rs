@@ -367,8 +367,12 @@ pub(crate) fn render_markdown_text_with_width_and_cwd(
     width: Option<usize>,
     cwd: Option<&Path>,
 ) -> Text<'static> {
-    Text::from(visible_lines(render_markdown_lines_with_width_and_cwd(
-        input, width, cwd,
+    Text::from(visible_lines(render_markdown_lines(
+        input,
+        width,
+        cwd,
+        &never_hide_link_destination,
+        false,
     )))
 }
 
@@ -397,16 +401,27 @@ pub(crate) fn render_markdown_lines_with_width_cwd_and_hidden_link_destinations(
     cwd: Option<&Path>,
     is_hidden_link_destination: &dyn Fn(&str) -> bool,
 ) -> Vec<HyperlinkLine> {
+    render_markdown_lines(input, width, cwd, is_hidden_link_destination, true)
+}
+
+fn render_markdown_lines(
+    input: &str,
+    width: Option<usize>,
+    cwd: Option<&Path>,
+    is_hidden_link_destination: &dyn Fn(&str) -> bool,
+    graphics: bool,
+) -> Vec<HyperlinkLine> {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TABLES);
     options.set(Options::ENABLE_TASKLISTS, preferences::current().lists);
-    let math = math::MathMarkdown::new(input, options, width);
+    let math = math::MathMarkdown::with_graphics(input, options, width, graphics);
     let parser = DecodedTextMerge::new(source_tables::preserve(
         input,
         math.events(Parser::new_ext(&math.markdown, options).into_offset_iter()),
     ));
     let mut w = Writer::new(input, width, cwd, is_hidden_link_destination);
+    w.math_images = math.images.clone();
     // Drop the consumed parser before the rendering state, including on unwind.
     let mut parser = parser;
     w.run(&mut parser);
@@ -476,6 +491,11 @@ struct Writer<'a, 'policy> {
     current_line_style: Style,
     current_line_in_code_block: bool,
     table_state: Option<TableState>,
+    math_images: Vec<(
+        Range<usize>,
+        std::sync::Arc<crate::math_graphics::MathImage>,
+        bool,
+    )>,
 }
 
 impl<'a, 'policy> Writer<'a, 'policy> {
@@ -521,6 +541,7 @@ impl<'a, 'policy> Writer<'a, 'policy> {
             current_line_style: Style::default(),
             current_line_in_code_block: false,
             table_state: None,
+            math_images: Vec::new(),
         }
     }
 
@@ -553,6 +574,16 @@ impl<'a, 'policy> Writer<'a, 'policy> {
             self.transformed_code_source = source;
         }
         self.prepare_for_event(&event);
+        if let Event::InlineHtml(fallback) = &event
+            && let Some((_, image, display)) = self
+                .math_images
+                .iter()
+                .find(|(source, _, _)| *source == range)
+                .cloned()
+        {
+            self.math_image(image, display, range, fallback.clone());
+            return;
+        }
         let copy_inline = crate::markdown_copy::Inline::from_event(&event);
         if let Some(inline) = &copy_inline {
             self.copy_inline.push(inline.clone());
@@ -2322,11 +2353,24 @@ impl<'a, 'policy> Writer<'a, 'policy> {
                 let opts = RtOptions::new(width)
                     .initial_indent(self.current_initial_indent.clone().into())
                     .subsequent_indent(self.current_subsequent_indent.clone().into());
-                for wrapped in crate::terminal_hyperlinks::adaptive_wrap_hyperlink_lines(
-                    std::slice::from_ref(&line),
-                    opts,
-                ) {
-                    self.push_output_line(wrapped.style(style));
+                let wrapped = if line.images.is_empty() {
+                    crate::terminal_hyperlinks::adaptive_wrap_hyperlink_lines(
+                        std::slice::from_ref(&line),
+                        opts,
+                    )
+                } else {
+                    if let Some(source) = line.source.as_mut() {
+                        source.continuation_indent = self.current_subsequent_indent.clone().into();
+                    }
+                    crate::terminal_hyperlinks::remap_source_wrapped_line(
+                        &line,
+                        crate::math_graphics::wrap(&line, opts),
+                    )
+                };
+                for wrapped in wrapped {
+                    for row in crate::math_graphics::expand(wrapped.style(style)) {
+                        self.push_output_line(row);
+                    }
                 }
             } else {
                 let mut spans = self.current_initial_indent.clone();
@@ -2339,13 +2383,68 @@ impl<'a, 'policy> Writer<'a, 'policy> {
                     hyperlink.columns =
                         hyperlink.columns.start + shift..hyperlink.columns.end + shift;
                 }
+                for image in &mut line.images {
+                    image.shift(shift);
+                }
                 line.line = Line::from_iter(spans);
-                self.push_output_line(line.style(style));
+                for row in crate::math_graphics::expand(line.style(style)) {
+                    self.push_output_line(row);
+                }
             }
             self.current_initial_indent.clear();
             self.current_subsequent_indent.clear();
             self.current_line_in_code_block = false;
             self.line_ends_with_local_link_target = false;
+        }
+    }
+
+    fn math_image(
+        &mut self,
+        image: std::sync::Arc<crate::math_graphics::MathImage>,
+        display: bool,
+        range: Range<usize>,
+        fallback: CowStr<'a>,
+    ) {
+        let prefix_width = Self::spans_display_width(&self.prefix_spans(self.pending_marker_line))
+            .max(Self::spans_display_width(&self.prefix_spans(false)));
+        let available = self.wrap_width.unwrap_or(0).saturating_sub(prefix_width);
+        if image.columns > available
+            || self.table_state.is_some()
+            || self.copy_inline.len() >= crate::markdown_copy::MAX_COPY_DEPTH
+        {
+            self.text(fallback);
+            return;
+        }
+        if display {
+            self.flush_current_line();
+            self.push_line(Line::default());
+            let padding = (available - image.columns) / 2;
+            self.current_initial_indent
+                .push(Span::raw(" ".repeat(padding)));
+        } else {
+            self.text("".into());
+        }
+        self.copy_inline.push(crate::markdown_copy::Inline::Math(
+            self.input[range.clone()].into(),
+            range.start,
+        ));
+        let start = self
+            .current_line_content
+            .as_ref()
+            .map_or(0, HyperlinkLine::width);
+        self.push_span(Span::raw(crate::math_graphics::SLOT.repeat(image.columns)));
+        self.copy_inline.pop();
+        if let Some(line) = self.current_line_content.as_mut() {
+            line.images.push(crate::math_graphics::ImageRow {
+                columns: start..start + image.columns,
+                row: image.baseline_row,
+                image_column: 0,
+                image,
+            });
+        }
+        if display {
+            self.flush_current_line();
+            self.needs_newline = true;
         }
     }
 

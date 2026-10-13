@@ -53,11 +53,11 @@ impl ToolOutputPreview {
     }
 
     pub(crate) fn push_line(&mut self, line: Line<'_>) {
-        self.push_rendered_line(line, /*source*/ None, Vec::new());
+        self.push_rendered_line(line, /*source*/ None, Vec::new(), Vec::new());
     }
 
     pub(crate) fn push_hyperlink_line(&mut self, line: HyperlinkLine) {
-        self.push_rendered_line(line.line, line.source, line.hyperlinks);
+        self.push_rendered_line(line.line, line.source, line.hyperlinks, line.images);
     }
 
     fn push_rendered_line(
@@ -65,6 +65,7 @@ impl ToolOutputPreview {
         line: Line<'_>,
         source: Option<LogicalLineSource>,
         hyperlinks: Vec<TerminalHyperlink>,
+        images: Vec<crate::math_graphics::ImageRow>,
     ) {
         let remaining = PREVIEW_LINES - self.lines.len();
         if self.full || remaining == 0 {
@@ -92,6 +93,10 @@ impl ToolOutputPreview {
         // Hard-wrap even URL tokens here so the preview cannot exceed its row budget, while
         // remapping each visible fragment to the original hyperlink destination and source.
         let bounded = HyperlinkLine {
+            images: images
+                .into_iter()
+                .filter_map(|image| image.project(0..bounded.width(), 0))
+                .collect(),
             line: bounded,
             hyperlinks,
             source,

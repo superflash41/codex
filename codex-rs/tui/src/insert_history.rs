@@ -337,8 +337,10 @@ fn write_history_line<W: Write>(
         source: None,
         line: Line::from(merged_spans),
         hyperlinks: line.hyperlinks.clone(),
+        images: line.images.clone(),
     };
     let decorated = decorate_spans(&merged_line);
+    crate::math_graphics::write_pending(writer)?;
     write_spans(writer, decorated.iter())
 }
 

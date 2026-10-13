@@ -24,6 +24,15 @@ pub(super) struct LogicalLine {
 pub(super) fn logical_lines(lines: &[HyperlinkLine]) -> Vec<LogicalLine> {
     let mut logical: Vec<LogicalLine> = Vec::new();
     for line in lines {
+        // Math padding is regenerated after reflow; it is not a hard break in the prose.
+        if !line.images.is_empty()
+            && line
+                .images
+                .iter()
+                .all(|image| image.row != image.image.baseline_row)
+        {
+            continue;
+        }
         let source = line
             .source
             .clone()
@@ -37,7 +46,11 @@ pub(super) fn logical_lines(lines: &[HyperlinkLine]) -> Vec<LogicalLine> {
             None => {
                 let mut entry = LogicalLine {
                     line: HyperlinkLine::new(Line::default().style(line.line.style)),
-                    initial_indent: slice_line(&line.line, 0..source.prefix_bytes),
+                    initial_indent: if line.images.iter().any(|image| image.image.display) {
+                        source.continuation_indent.clone()
+                    } else {
+                        slice_line(&line.line, 0..source.prefix_bytes)
+                    },
                     subsequent_indent: source.continuation_indent.clone(),
                     wrap_policy: source.wrap_policy,
                     right_reserve: source.right_reserve,
@@ -68,6 +81,11 @@ impl LogicalLine {
         let prefix_width = prefix.width();
         let content_width = display_width(&source.text[source.range.clone()]);
         self.line.line.spans.extend(body.spans);
+        self.line.images.extend(
+            line.images.iter().filter_map(|image| {
+                image.project(prefix_width..prefix_width + content_width, column)
+            }),
+        );
         self.line
             .hyperlinks
             .extend(line.hyperlinks.iter().filter_map(|link| {

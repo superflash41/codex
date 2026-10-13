@@ -70,6 +70,8 @@ pub(crate) enum Inline {
     Literal,
     /// Balance parser events for links whose visible text has no copied wrapper.
     Ignored,
+    /// An equation is copied as its original TeX, including when only part is selected.
+    Math(Arc<str>, usize),
 }
 
 impl Inline {
@@ -188,6 +190,7 @@ impl CopyLine {
                 runs.next();
             }
             match mark {
+                Some(Inline::Math(source, _)) => out.push_str(source),
                 Some(Inline::Code) => {
                     let content = &text[start..end];
                     let content = if self.table_cell {
@@ -234,7 +237,9 @@ impl CopyLine {
                                 .replace('\r', "%0D");
                             append_inline(&mut out, &format!("[{trimmed}](<{destination}>)"));
                         }
-                        Inline::Code | Inline::Literal | Inline::Ignored => unreachable!(),
+                        Inline::Code | Inline::Literal | Inline::Ignored | Inline::Math(..) => {
+                            unreachable!()
+                        }
                     }
                     out.push_str(&body[body.trim_end().len()..]);
                 }
@@ -245,6 +250,32 @@ impl CopyLine {
                 }
             }
         }
+        out
+    }
+
+    fn has_math(&self) -> bool {
+        self.runs
+            .iter()
+            .any(|(_, marks)| marks.iter().any(|mark| matches!(mark, Inline::Math(..))))
+    }
+
+    fn plain(&self, text: &str, range: Range<usize>) -> String {
+        let mut out = String::new();
+        let mut offset = range.start;
+        for (run, marks) in &self.runs {
+            if run.end <= range.start || run.start >= range.end {
+                continue;
+            }
+            if let Some(Inline::Math(source, _)) =
+                marks.iter().find(|mark| matches!(mark, Inline::Math(..)))
+            {
+                let start = run.start.max(range.start);
+                out.push_str(&text[offset..start]);
+                out.push_str(source);
+                offset = run.end.min(range.end);
+            }
+        }
+        out.push_str(&text[offset..range.end]);
         out
     }
 }
@@ -343,6 +374,13 @@ fn render_selection(
     plain: &str,
     output: SelectionOutput,
 ) -> (String, CopyFormat) {
+    if !lines.is_empty()
+        && lines
+            .iter()
+            .all(|line| line.source.copy.as_ref().is_some_and(|copy| copy.omit))
+    {
+        return (String::new(), CopyFormat::PlainText);
+    }
     // Soft wraps and streamed fragments of the same logical line are already coalesced.
     if let [line] = lines
         && line
@@ -375,6 +413,7 @@ fn render_selection(
                 && line.source.copy.as_ref().is_some_and(|copy| {
                     !copy.omit
                         && (copy.table.is_some()
+                            || copy.has_math()
                             || copy.item_prefix.contains("[x] ")
                             || copy.item_prefix.contains("[ ] "))
                 })
@@ -500,8 +539,8 @@ fn render_selection(
             if line.range.start == 0 || first && lines.peek().is_some() {
                 out.push_str(&prefix);
             }
-            let text = &line.source.text[line.range.clone()];
-            output.push_prose(&mut out, text, || {
+            let text = copy.plain(&line.source.text, line.range.clone());
+            output.push_prose(&mut out, &text, || {
                 copy.render(&line.source.text, line.range.clone(), /*depth*/ 0)
             });
         } else {

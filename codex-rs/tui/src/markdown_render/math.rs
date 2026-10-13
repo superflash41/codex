@@ -21,15 +21,31 @@ pub(super) struct MathMarkdown<'a> {
     pub(super) pending_start: Option<usize>,
     pub(super) display_ranges: Vec<Range<usize>>,
     replacements: Vec<(Range<usize>, String)>,
+    pub(super) images: Vec<(
+        Range<usize>,
+        std::sync::Arc<crate::math_graphics::MathImage>,
+        bool,
+    )>,
 }
 
 impl<'a> MathMarkdown<'a> {
+    #[cfg(test)]
     pub(super) fn new(input: &'a str, options: Options, width: Option<usize>) -> Self {
+        Self::with_graphics(input, options, width, false)
+    }
+
+    pub(super) fn with_graphics(
+        input: &'a str,
+        options: Options,
+        width: Option<usize>,
+        graphics: bool,
+    ) -> Self {
         let mut result = Self {
             markdown: Cow::Borrowed(input),
             pending_start: None,
             display_ranges: Vec::new(),
             replacements: Vec::new(),
+            images: Vec::new(),
         };
         if !input.contains('$') && !input.contains("\\(") && !input.contains("\\[") {
             return result;
@@ -41,7 +57,11 @@ impl<'a> MathMarkdown<'a> {
             .map(|(_, def)| def.span.clone())
             .collect();
         let mut containers = Vec::new();
+        let mut tables = Vec::new();
         protected.extend(parser.into_offset_iter().filter_map(|(event, range)| {
+            if matches!(event, Event::Start(Tag::Table(_))) {
+                tables.push(range.clone());
+            }
             if matches!(event, Event::Start(Tag::List(_) | Tag::BlockQuote)) {
                 containers.push(range.clone());
             }
@@ -243,6 +263,15 @@ impl<'a> MathMarkdown<'a> {
                             })
                 })
                 .unwrap_or_else(|| input[span.clone()].to_owned());
+            if graphics
+                && width.is_some()
+                && super::preferences::current().math
+                && !tables.iter().any(|range| range.contains(&start))
+                && let Some(image) = crate::math_graphics::typeset(formula, display)
+                && width.is_some_and(|width| image.columns <= width.saturating_sub(4))
+            {
+                result.images.push((span.clone(), image, display));
+            }
             // Dollars are ordinary text in the Markdown parser and cannot form an HTML tag.
             result
                 .markdown
@@ -282,7 +311,13 @@ impl<'a> MathMarkdown<'a> {
                         offset..span.start,
                     ));
                 }
-                output.push((Event::Text(text.as_str().into()), span.clone()));
+                let event = if self.images.iter().any(|(range, _, _)| range == span) {
+                    // A distinct event prevents text merging from erasing the equation boundary.
+                    Event::InlineHtml(text.as_str().into())
+                } else {
+                    Event::Text(text.as_str().into())
+                };
+                output.push((event, span.clone()));
                 offset = span.end;
             }
             if offset < range.end {

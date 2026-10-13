@@ -477,7 +477,7 @@ impl HistoryCell for AgentMessageCell {
     }
 
     fn raw_lines(&self) -> Vec<Line<'static>> {
-        plain_lines(visible_lines(self.lines.clone()))
+        raw_hyperlink_lines(self.lines.clone())
     }
 
     fn is_stream_continuation(&self) -> bool {

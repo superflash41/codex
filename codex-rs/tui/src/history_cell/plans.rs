@@ -46,7 +46,7 @@ impl HistoryCell for StreamingPlanTailCell {
     }
 
     fn raw_lines(&self) -> Vec<Line<'static>> {
-        plain_lines(visible_lines(self.lines.clone()))
+        raw_hyperlink_lines(self.lines.clone())
     }
 
     fn is_stream_continuation(&self) -> bool {
@@ -191,7 +191,7 @@ impl HistoryCell for ProposedPlanStreamCell {
     }
 
     fn raw_lines(&self) -> Vec<Line<'static>> {
-        plain_lines(visible_lines(self.lines.clone()))
+        raw_hyperlink_lines(self.lines.clone())
     }
 
     fn is_stream_continuation(&self) -> bool {

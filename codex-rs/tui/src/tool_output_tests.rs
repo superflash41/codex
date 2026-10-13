@@ -46,6 +46,7 @@ fn preview_preserves_hyperlinks_and_original_logical_source() {
     let destination = "https://example.test/original".to_owned();
     let mut preview = ToolOutputPreview::new(/*width*/ 6, /*omitted*/ 0);
     preview.push_hyperlink_line(HyperlinkLine {
+        images: Vec::new(),
         line,
         hyperlinks: vec![TerminalHyperlink::web(
             /*columns*/ 0..24,
